@@ -2,6 +2,8 @@
 #define CAMERA_ROS_BASE_H_
 
 #include <ros/ros.h>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv-3.3.1-dev/opencv2/opencv.hpp>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/image_encodings.h>
@@ -71,12 +73,50 @@ class CameraRosBase {
     diagnostic_updater_.setHardwareID(id);
   }
 
+void HistogramEqualize(boost::shared_ptr<sensor_msgs::Image>& image_msg) {
+  cv_bridge::CvImagePtr cv_ptr;
+  cv::Mat img, src, dst;
+  std::vector<cv::Mat> hsv, hsv_hist(3);
+  try {
+    cv_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8);  
+  }
+  catch(cv_bridge::Exception &e) {
+    ROS_ERROR("cv_bridge exception: %s", e.what());
+    return;
+  }
+  img = cv_ptr->image;
+  cv::cvtColor(img, src, CV_BGR2HSV);
+  cv::split(src, hsv);
+  hsv_hist = hsv;
+  cv::equalizeHist(hsv.at(1), hsv_hist.at(1));
+  cv::equalizeHist(hsv.at(2), hsv_hist.at(2));
+  cv::merge(hsv_hist, dst);
+  cv::cvtColor(dst, img, CV_HSV2BGR);
+  image_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", img).toImageMsg();
+}
+
+void Undistort(boost::shared_ptr<sensor_msgs::Image>& image_msg, const boost::shared_ptr<sensor_msgs::CameraInfo>& cinfo_msg){
+  cv_bridge::CvImagePtr cv_ptr;
+  cv::Mat img, dst;
+  std::vector<double> camMatrix;
+  std::vector<cv::Mat> hsv, hsv_hist(3);
+  try { cv_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8); }
+  catch(cv_bridge::Exception &e) {
+    ROS_ERROR("cv_bridge exception: %s", e.what());
+    return;
+  }
+  img = cv_ptr->image;
+  for(int i = 0; i < 9; i++){ camMatrix.push_back(cinfo_msg->K[i]); }
+  cv::undistort(img, dst, camMatrix, cinfo_msg->D);
+  image_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", img).toImageMsg();
+}
+
   /**
    * @brief PublishCamera Publish a camera topic with Image and CameraInfo
    * @param time Acquisition time stamp
    */
   void PublishCamera(const ros::Time& time) {
-    const auto image_msg = boost::make_shared<sensor_msgs::Image>();
+    auto image_msg = boost::make_shared<sensor_msgs::Image>();
     const auto cinfo_msg =
         boost::make_shared<sensor_msgs::CameraInfo>(cinfo_mgr_.getCameraInfo());
     image_msg->header.frame_id = frame_id_;
@@ -84,6 +124,7 @@ class CameraRosBase {
     if (Grab(image_msg, cinfo_msg)) {
       // Update camera info header
       cinfo_msg->header = image_msg->header;
+      Undistort(image_msg, cinfo_msg);
       camera_pub_.publish(image_msg, cinfo_msg);
       topic_diagnostic_.tick(image_msg->header.stamp);
     }

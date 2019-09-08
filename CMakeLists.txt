@@ -8,18 +8,22 @@ find_package(catkin REQUIRED COMPONENTS
     dynamic_reconfigure
     image_transport
     sensor_msgs
+    cv_bridge
     )
+
+find_package(OpenCV 3 REQUIRED)
 
 catkin_package(
     INCLUDE_DIRS include
     LIBRARIES
-    CATKIN_DEPENDS camera_info_manager diagnostic_updater dynamic_reconfigure image_transport roscpp sensor_msgs
+    CATKIN_DEPENDS camera_info_manager diagnostic_updater dynamic_reconfigure image_transport roscpp sensor_msgs cv_bridge
     DEPENDS
     )
 
 include_directories(
     include
     ${catkin_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     )
 
 install(DIRECTORY include/${PROJECT_NAME}/
